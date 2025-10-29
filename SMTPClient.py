@@ -1,8 +1,19 @@
 import ssl
 from socket import *
 
+# inserir e-mail usuário remetente
+# inserir e-mail usuário destinatário
 
-# Mensagem a ser enviada no e-mail
+# Mensagem a ser enviada no e-mail - formato
+# de:	Felipe Biava Favarin <felipebfavarin@gmail.com>
+# a:	Felipe Biava Favarin <felipebfavarin@gmail.com>
+# data:	29 de out. de 2025, 11:35
+# assunto:	*Teste e-mail Redes*
+# enviado por:	gmail.com
+# :	Importante principalmente porque foi enviada diretamente para você.
+# utilizar codificação em base64 para encode e decode dos pacotes
+
+
 msg = "\r\n Eu amo redes de computadores!"
 endmsg = "\r\n.\r\n"
 
