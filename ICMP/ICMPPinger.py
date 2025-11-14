@@ -10,6 +10,7 @@ import select
 ICMP_ECHO_REQUEST = 8
 
 # Função para calcular o checksum dos pacotes ICMP (protocolo possui esse campo para a integridade dos dados)
+# verifica se os dados foram corrompidos ou alterados durante a transmissão (maneira de confiabilidade do protocolo)
 def checksum(source_string): # recebe uma sequencia em bytes
     countTo = (int(len(source_string) / 2)) * 2 # para processar palavras de 2 em 2 bytes
     sum = 0   # armazena a soma dos blocos de 16 bits
@@ -41,6 +42,7 @@ def sendOnePing(sock, dest_addr, ID, seq_number):
     dest_addr = socket.gethostbyname(dest_addr)
     my_checksum = 0
     
+    # cria o cabeçalho sem calcular o checksum
     header = struct.pack("bbHHh", ICMP_ECHO_REQUEST, 0, my_checksum, ID, seq_number)
     # "bbHHh" cada letra possui um tamanho (e significado) que somados é o tamanho do cabeçalho ICMP
     # significa:
@@ -56,9 +58,10 @@ def sendOnePing(sock, dest_addr, ID, seq_number):
     data = struct.pack("d", time.time())
 
     # Calcula o checksum considerando o cabeçalho e os dados
+    # O checksum precisa ser calculado sobre o pacote completo (cabeçalho + dados) e após isso ser inserido no cabeçalho
     my_checksum = checksum(header + data)
     
-    # Recria o cabeçalho já com o checksum correto
+    # Recria / Atualiza o cabeçalho já com o checksum calculado
     # socket.htons converte o checksum da ordem de bytes do host para a ordem de bytes de rede (big-endian)
     header = struct.pack("bbHHh", ICMP_ECHO_REQUEST, 0, socket.htons(my_checksum), ID, seq_number)
     
@@ -74,7 +77,10 @@ def receiveOnePing(sock, ID, timeout):
     
     while True:
         startedSelect = time.time()
+        
         ready = select.select([sock], [], [], timeLeft)
+        #select.select monitora operações de E/S de baixo nível de cada socket
+
         timeInSelect = (time.time() - startedSelect)
         if ready[0] == []:
             return None, None  # Adicionado segundo valor (erro)
@@ -88,11 +94,13 @@ def receiveOnePing(sock, ID, timeout):
         type, code, checksum, packetID, sequence = struct.unpack("bbHHh", icmpHeader)
         
         # verificação/ tratamento de erro de códigos de erro ICMP
-        # Tipo 0: Echo Reply, lugar do ping normal
+        # Tipo 0 - Echo Reply (resposta do ping) - destino alcançado
         if type == 0 and packetID == ID:
-            bytesInDouble = struct.calcsize("d")
-            timeSent = struct.unpack("d", recPacket[28:28 + bytesInDouble])[0]
+            bytesInDouble = struct.calcsize("d") # calcula o tamanho de "d" de 64 bits que armazena o timestamp enviado
+            timeSent = struct.unpack("d", recPacket[28:28 + bytesInDouble])[0] # extrai o timestamp após os 8 bytes do cabeçalho ICMP
+            # após o ponto de corte no 28 byte, temos o timestamp, [0] é utilizado para pegar somente o timestamp, já que a função unpack retorna uma tupla
             return timeReceived - timeSent, None
+        
         # Tipo 3: Destination Unreachable
         elif type == 3:
             # Exibe mensagem específica conforme o código de erro
@@ -107,7 +115,7 @@ def receiveOnePing(sock, ID, timeout):
         if timeLeft <= 0:
             return None, None
     
-# Função que combina envio e recebimento de um único pacote ping, retornando o tempo de resposta
+# Função que combina envio e recebimento de um único pacote ping, retornando o tempo de resposta (delay) e/ou erro do icmp
 def doOnePing(dest_addr, timeout, seq_number, ID): 
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.getprotobyname("icmp"))
@@ -116,7 +124,7 @@ def doOnePing(dest_addr, timeout, seq_number, ID):
         # já que ICMP não trabalha com portas (como TCP ou UDP) e é tratado no nível de IP (camada de rede).
         # Isso exige privilégios de superusuário/admin (por questões de segurança)
         # sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.getprotobyname("icmp"))
-        # parâmetros: AF_INET = IPv4, SOCK_RAW = socket cru, ICMP protocol
+        # parâmetros: AF_INET = IPv4, SOCK_RAW = socket cru, icmp se refere ao protocolo usado para o socket
 
     except PermissionError:
         print("Você precisa rodar como root/administrador!")
@@ -127,19 +135,30 @@ def doOnePing(dest_addr, timeout, seq_number, ID):
     sock.close()
     return delay, icmp_error
 
-# Função principal que executa pings conforme "count", calcula estatísticas e imprime os resultados
+# Função principal que executa pings conforme "count", calcula estatísticas de rtt e imprime os resultados
 def ping(host, count=4, timeout=1):
-    print(f"Pinging {host} with Python ICMP:")
+    # Obtenção do IP
+    ip = socket.gethostbyname(host)
+
+    # Resolvendo o nome de domínio (caso seja possível)
+    try:
+        hostname, _, _ = socket.gethostbyaddr(ip)
+        print(f"Pinging {hostname} ({ip}) with Socket Raw ICMP:")
+    except socket.herror:
+        print(f"Pinging {host} ({ip}) with Socket Raw ICMP:")
     
     delays = []
     packet_lost = 0 # quantidade de pacotes que serão perdidos
-    ID = os.getpid() & 0xFFFF  # identificador único do processo, para distinguir pacotes
-    
+    ID = os.getpid() & 0xFFFF  # operação AND obtem os 16 bits (2 bytes) menos significativos do ID do processo
+    # ajuda a identificar qual pacote ICMP corresponde a resposta recebida
+
     for seq in range(count):
         delay, icmp_error = doOnePing(host, timeout, seq + 1, ID)
+
+        # verificações de erros
         if delay is not None:
             print(f"Reply from {host}: seq={seq+1} time={round(delay*1000, 2)} ms")
-            delays.append(delay)
+            delays.append(delay) # guarda os tempos de delays (atrasos) para estatísticas
         elif icmp_error is not None:
             print(f"Erro ICMP para seq {seq+1}: {icmp_error}")
             packet_lost += 1
@@ -150,9 +169,9 @@ def ping(host, count=4, timeout=1):
     
     # Estatísticas após os pings
     print("\n--- Ping statistics ---")
-    sent = count
-    received = len(delays)
-    loss = ((sent - received) / sent) * 100
+    sent = count # qtd de pacotes transmitidos
+    received = len(delays) # qtd de pacotes recebidos
+    loss = ((sent - received) / sent) * 100 # porcentagem de perda de pacotes
     print(f"{sent} packets transmitted, {received} received, {loss}% packet loss")
     
     # caso tenha pacotes recebidos
@@ -166,8 +185,9 @@ def ping(host, count=4, timeout=1):
         print("No packets received.")
 
 if __name__ == "__main__":
-    # Testando com 4 IP´s diferentes
-    hosts = ['127.0.0.1', '8.8.8.8', 'www.alibaba.com', 'www.ufrj.br']
+    # Testando com IP´s e domínios diferentes
+    hosts = ['127.0.0.1', '8.8.8.8', 'www.alibaba.com', 'www3.nhk.or.jp']
+
     for host in hosts:
         ping(host)
         print("\n")
