@@ -177,3 +177,6 @@ if __name__ == "__main__":
     #get_route("www.alibaba.com")
     #get_route("www.reddit.com")
     #get_route("www3.nhk.or.jp") # site japonês
+    #print("\n# --------------------------------------- #")
+    #get_route("ping.online.net")
+
