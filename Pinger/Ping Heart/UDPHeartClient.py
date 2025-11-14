@@ -1,4 +1,10 @@
 # socket cliente
+# UDP Heartbeat implementa um mecanismo de keep-alive que são os pacotes de "verificação" mandados de maneira periódica
+# serve para garantir que a conexão esteja ativa em conexões de longa duração
+# ao contrário do UDP, Heartbeat oferece uma forma de verificar se a conexão ou o servidor ainda está funcionando, mesmo sem uma conexão persistente como o TCP
+# quando o servidor calcula o tempo dos pacotes, se der timeout, ele sabe que houve falha na comunicação, o cliente não está mais ativo ou que houve problema na rede
+# monitoramento ativo
+# O TCP possui uma implementação keep-alive que envia pacotes de "verificação" para saber se a conexão ainda está ativa.
 
 import socket
 import time
