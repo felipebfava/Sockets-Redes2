@@ -20,3 +20,7 @@ Para executar cada implementação entre na pasta específica e execute no termi
 python .\<nome_do_arquivo>
 ```
 
+## Observação
+
+Alguns códigos precisam ser executados como usuário com acesso privilegiado no sistema operacional.
+
